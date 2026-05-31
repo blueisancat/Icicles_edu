@@ -604,7 +604,7 @@
         
         .mode-btn {
             position: relative;
-            background: rgba(0, 210, 255, 0.05);
+            background: rgba(2, 3, 3, 0.05);
             border: 1px solid rgba(0, 210, 255, 0.2);
             color: rgba(255, 255, 255, 0.8);
             padding: 16px 30px;
@@ -1072,10 +1072,10 @@
         
         <!-- Mobile Controls -->
         <div class="mobile-controls" hidden>
-            <button class="control-button" id="leftBtn" ontouchstart="moveLeft()" ontouchend="stopMove()">
+            <button class="control-button" id="leftBtn" onmousedown="moveLeft()" onmouseup="stopMove()" ontouchstart="moveLeft()" ontouchend="stopMove()">
                 ←
             </button>
-            <button class="control-button" id="rightBtn" ontouchstart="moveRight()" ontouchend="stopMove()">
+            <button class="control-button" id="rightBtn" onmousedown="moveRight()" onmouseup="stopMove()" ontouchstart="moveRight()" ontouchend="stopMove()">
                 →
             </button>
         </div>
@@ -2241,17 +2241,21 @@
             try {
                 const savedData = localStorage.getItem(CONFIG.localStoragePrefix + 'playerData');
                 if (savedData) {
-                    const parsed = JSON.parse(savedData);
+                    // Decode from Base64 to prevent simple console editing
+                    const decodedData = atob(savedData);
+                    const parsed = JSON.parse(decodedData);
                     playerData = { ...playerData, ...parsed };
                 }
             } catch (error) {
-                console.log('Could not load saved data:', error);
+                console.log('Could not load saved data or data corrupted:', error);
             }
         }
         
         function savePlayerData() {
             try {
-                localStorage.setItem(CONFIG.localStoragePrefix + 'playerData', JSON.stringify(playerData));
+                // Encode to Base64 to obfuscate data in localStorage
+                const encodedData = btoa(JSON.stringify(playerData));
+                localStorage.setItem(CONFIG.localStoragePrefix + 'playerData', encodedData);
             } catch (error) {
                 console.log('Could not save data:', error);
             }
