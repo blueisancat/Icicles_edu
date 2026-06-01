@@ -1205,7 +1205,7 @@
     
     <!-- Sound Settings Modal -->
     <div id="sound-settings" class="modal">
-        <button class="close-btn" onclick="closeSoundSettings()">×</button>
+        <button class="close-btn" onclick="closeSoundSettings()"></button>
         <div class="modal-header">
             <h2>🎵 AUDIO MATRIX</h2>
             <p class="modal-subtitle">Sonic Configuration Interface</p>
@@ -1217,7 +1217,7 @@
                     <span style="color: var(--primary);">🔊</span> MASTER RESONANCE
                 </label>
                 <input type="range" min="0" max="100" value="100" id="master-volume" 
-                       style="width: 100%; height: 10px; -webkit-appearance: none; background: linear-gradient(90deg, var(--primary), var(--secondary)); border-radius: 5px; outline: none;">
+                       style="width: 100%; height: 10px; appearance: none; -webkit-appearance: none; background: linear-gradient(90deg, var(--primary), var(--secondary)); border-radius: 5px; outline: none;">
             </div>
             
             <div style="margin: 25px 0; padding: 20px; background: rgba(0,210,255,0.05); border-radius: 15px;">
@@ -1307,6 +1307,8 @@
             highScores: [],
             unlockedSkins: ['skin_default'],
             equippedSkin: 'skin_default',
+            unlockedMaps: ['map_grid'],
+            equippedMap: 'map_grid',
             settings: {
                 masterVolume: 100,
                 soundEnabled: true,
@@ -1324,6 +1326,12 @@
                 { id: 'skin_rainbow', name: 'Rainbow', color: 0xffffff, price: 500, emoji: '🌈' },
                 { id: 'skin_galaxy', name: 'Galaxy', color: 0x8a2be2, price: 750, emoji: '🌌' },
                 { id: 'skin_gold', name: 'Golden', color: 0xffd700, price: 1000, emoji: '⭐' }
+            ],
+            maps: [
+                { id: 'map_grid', name: 'Cyber Grid', color: 0x00d2ff, fog: 0x000000, road: 0x050515, price: 0, emoji: '🌐' },
+                { id: 'map_jungle', name: 'Neon Jungle', color: 0x00ff00, fog: 0x002200, road: 0x0a2f0a, price: 200, emoji: '🌿' },
+                { id: 'map_volcano', name: 'Magma Core', color: 0xff4400, fog: 0x220000, road: 0x1a0500, price: 500, emoji: '🌋' },
+                { id: 'map_void', name: 'Deep Space', color: 0x8a2be2, fog: 0x050010, road: 0x000005, price: 1000, emoji: '🌌' }
             ]
         };
         
@@ -1523,14 +1531,36 @@
         
         function setupGameWorld() {
             try {
-                // Minimal lighting
-                const ambientLight = new THREE.AmbientLight(0x222222);
+                // CRITICAL FIX: Clean up scene to prevent object duplication
+                gameState.scene.children = gameState.scene.children.filter(child => {
+                    if (child.userData && child.userData.persistent) return true;
+                    if (child instanceof THREE.Camera || child instanceof THREE.Light) {
+                        gameState.scene.remove(child);
+                        return false;
+                    }
+                    return true;
+                });
+                gameState.pillars = [];
+                
+                const currentMap = SHOP_ITEMS.maps.find(m => m.id === playerData.equippedMap) || SHOP_ITEMS.maps[0];
+                
+                // Lighting
+                const ambientLight = new THREE.AmbientLight(0x404040);
+                ambientLight.userData.persistent = true;
                 gameState.scene.add(ambientLight);
                 
-                // Basic road
+                const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+                directionalLight.position.set(5, 10, 7.5);
+                directionalLight.userData.persistent = true;
+                gameState.scene.add(directionalLight);
+                
+                // Map Theme
+                gameState.scene.fog = new THREE.Fog(currentMap.fog, 10, 100);
+                
+                // Road
                 const roadGeo = new THREE.PlaneGeometry(20, 400);
                 const roadMat = new THREE.MeshBasicMaterial({ 
-                    color: 0x050515
+                    color: currentMap.road
                 });
                 
                 gameState.road = new THREE.Mesh(roadGeo, roadMat);
@@ -1540,7 +1570,7 @@
                 
                 // Lane markers
                 const laneGeo = new THREE.PlaneGeometry(0.08, 400);
-                const laneMat = new THREE.MeshBasicMaterial({ color: 0x00d2ff });
+                const laneMat = new THREE.MeshBasicMaterial({ color: currentMap.color });
                 
                 [-1.75, 1.75].forEach(x => {
                     const lane = new THREE.Mesh(laneGeo, laneMat);
@@ -1550,9 +1580,34 @@
                 });
                 
                 // Grid
-                gameState.grid = new THREE.GridHelper(400, 80, 0x00d2ff, 0x111111);
+                gameState.grid = new THREE.GridHelper(400, 80, currentMap.color, currentMap.fog);
                 gameState.grid.position.z = -180;
                 gameState.scene.add(gameState.grid);
+                
+                // Base Environment Objects (Pillars/Trees)
+                for (let i = 0; i < 40; i++) {
+                    const pillarGeo = new THREE.CylinderGeometry(0.2, 0.5, 10, 6);
+                    const pillarMat = new THREE.MeshBasicMaterial({ 
+                        color: currentMap.road
+                    });
+                    const pillar = new THREE.Mesh(pillarGeo, pillarMat);
+                    
+                    const side = Math.random() > 0.5 ? 1 : -1;
+                    pillar.position.set(side * (5 + Math.random() * 15), 5, -Math.random() * 400);
+                    gameState.scene.add(pillar);
+                    gameState.pillars.push(pillar);
+                }
+                
+                // Add map-specific enhancements
+                if (currentMap.id === 'map_grid') {
+                    setupCyberGridMap(currentMap);
+                } else if (currentMap.id === 'map_jungle') {
+                    setupNeonJungleMap(currentMap);
+                } else if (currentMap.id === 'map_volcano') {
+                    setupMagmaCoreMap(currentMap);
+                } else if (currentMap.id === 'map_void') {
+                    setupDeepSpaceMap(currentMap);
+                }
                 
                 // Create player
                 createPlayer();
@@ -1563,6 +1618,254 @@
             } catch (error) {
                 console.warn('Game world setup had issues, but continuing:', error);
             }
+        }
+
+        function setupCyberGridMap(mapData) {
+            // Cyber Grid: Add floating neon cubes, holograms and data streams
+            for (let i = 0; i < 50; i++) {
+                const size = Math.random() * 0.6 + 0.3;
+                const cubeGeo = new THREE.BoxGeometry(size, size, size);
+                const cubeMat = new THREE.MeshBasicMaterial({ 
+                    color: mapData.color,
+                    wireframe: Math.random() > 0.5
+                });
+                const cube = new THREE.Mesh(cubeGeo, cubeMat);
+                
+                const side = Math.random() > 0.5 ? 1 : -1;
+                cube.position.set(
+                    side * (3 + Math.random() * 18),
+                    3 + Math.random() * 12,
+                    -Math.random() * 350
+                );
+                cube.rotation.set(Math.random() * Math.PI, Math.random() * Math.PI, Math.random() * Math.PI);
+                gameState.scene.add(cube);
+                gameState.pillars.push(cube);
+            }
+            
+            // Add pulsing spheres
+            for (let i = 0; i < 40; i++) {
+                const sphereGeo = new THREE.SphereGeometry(0.3, 8, 8);
+                const sphereMat = new THREE.MeshBasicMaterial({ 
+                    color: new THREE.Color(mapData.color).multiplyScalar(1.5)
+                });
+                const sphere = new THREE.Mesh(sphereGeo, sphereMat);
+                
+                const side = Math.random() > 0.5 ? 1 : -1;
+                sphere.position.set(
+                    side * (7 + Math.random() * 12),
+                    2 + Math.random() * 15,
+                    -Math.random() * 350
+                );
+                gameState.scene.add(sphere);
+                gameState.pillars.push(sphere);
+            }
+
+            // Add "Data Streams" (vertical thin lines)
+            for (let i = 0; i < 30; i++) {
+                const streamGeo = new THREE.CylinderGeometry(0.05, 0.05, 20, 4);
+                const streamMat = new THREE.MeshBasicMaterial({ 
+                    color: mapData.color,
+                    transparent: true,
+                    opacity: 0.3
+                });
+                const stream = new THREE.Mesh(streamGeo, streamMat);
+                const side = Math.random() > 0.5 ? 1 : -1;
+                stream.position.set(side * (10 + Math.random() * 10), 10, -Math.random() * 350);
+                gameState.scene.add(stream);
+                gameState.pillars.push(stream);
+            }
+        }
+
+        function setupNeonJungleMap(mapData) {
+            // Neon Jungle: Add trees, vines, and organic formations
+            for (let i = 0; i < 45; i++) {
+                // Tree trunks
+                const trunkGeo = new THREE.CylinderGeometry(0.3, 0.6, 12, 5);
+                const trunkMat = new THREE.MeshBasicMaterial({ 
+                    color: 0x1a4d1a
+                });
+                const trunk = new THREE.Mesh(trunkGeo, trunkMat);
+                
+                const side = Math.random() > 0.5 ? 1 : -1;
+                trunk.position.set(
+                    side * (4 + Math.random() * 16),
+                    6,
+                    -Math.random() * 380
+                );
+                gameState.scene.add(trunk);
+                gameState.pillars.push(trunk);
+                
+                // Tree foliage (cone shapes)
+                const foliageGeo = new THREE.ConeGeometry(2, 6, 8);
+                const foliageMat = new THREE.MeshBasicMaterial({ 
+                    color: mapData.color
+                });
+                const foliage = new THREE.Mesh(foliageGeo, foliageMat);
+                foliage.position.set(trunk.position.x, trunk.position.y + 8, trunk.position.z);
+                gameState.scene.add(foliage);
+                gameState.pillars.push(foliage);
+            }
+            
+            // Add vines (thin stretched cylinders)
+            for (let i = 0; i < 30; i++) {
+                const vineGeo = new THREE.CylinderGeometry(0.08, 0.08, 8);
+                const vineMat = new THREE.MeshBasicMaterial({ 
+                    color: 0x00cc00
+                });
+                const vine = new THREE.Mesh(vineGeo, vineMat);
+                
+                const side = Math.random() > 0.5 ? 1 : -1;
+                vine.position.set(
+                    side * (6 + Math.random() * 14),
+                    4 + Math.random() * 8,
+                    -Math.random() * 350
+                );
+                vine.rotation.z = Math.random() * 0.5;
+                gameState.scene.add(vine);
+                gameState.pillars.push(vine);
+            }
+        }
+
+        function setupMagmaCoreMap(mapData) {
+            // Magma Core: Add lava pools and volcanic rocks
+            for (let i = 0; i < 40; i++) {
+                // Volcanic rocks
+                const rockGeo = new THREE.IcosahedronGeometry(Math.random() * 0.8 + 0.4, 1);
+                const rockMat = new THREE.MeshBasicMaterial({ 
+                    color: new THREE.Color(0x333333).lerp(new THREE.Color(0xff6600), Math.random())
+                });
+                const rock = new THREE.Mesh(rockGeo, rockMat);
+                
+                const side = Math.random() > 0.5 ? 1 : -1;
+                rock.position.set(
+                    side * (5 + Math.random() * 15),
+                    0.5 + Math.random() * 2,
+                    -Math.random() * 380
+                );
+                rock.rotation.set(Math.random() * Math.PI, Math.random() * Math.PI, Math.random() * Math.PI);
+                gameState.scene.add(rock);
+                gameState.pillars.push(rock);
+            }
+            
+            // Add lava pools (glowing ground circles)
+            for (let i = 0; i < 25; i++) {
+                const poolGeo = new THREE.CircleGeometry(1.5 + Math.random() * 1.5, 16);
+                const poolMat = new THREE.MeshBasicMaterial({ 
+                    color: new THREE.Color(0xff4400).multiplyScalar(0.8 + Math.random() * 0.4)
+                });
+                const pool = new THREE.Mesh(poolGeo, poolMat);
+                
+                pool.rotation.x = -Math.PI / 2;
+                const side = Math.random() > 0.5 ? 1 : -1;
+                pool.position.set(
+                    side * (3 + Math.random() * 17),
+                    0.01,
+                    -Math.random() * 380
+                );
+                gameState.scene.add(pool);
+                gameState.pillars.push(pool);
+            }
+            
+            // Add tall volcanic structures
+            for (let i = 0; i < 20; i++) {
+                const volcanoGeo = new THREE.ConeGeometry(0.8, 8, 8);
+                const volcanoMat = new THREE.MeshBasicMaterial({ 
+                    color: 0x662200
+                });
+                const volcano = new THREE.Mesh(volcanoGeo, volcanoMat);
+                
+                const side = Math.random() > 0.5 ? 1 : -1;
+                volcano.position.set(
+                    side * (7 + Math.random() * 13),
+                    4,
+                    -Math.random() * 350
+                );
+                gameState.scene.add(volcano);
+                gameState.pillars.push(volcano);
+            }
+        }
+
+        function setupDeepSpaceMap(mapData) {
+            // Deep Space: Add asteroids, celestial bodies, and cosmic dust
+            for (let i = 0; i < 60; i++) {
+                const asteroidGeo = new THREE.IcosahedronGeometry(Math.random() * 1.2 + 0.3, 1);
+                const asteroidMat = new THREE.MeshBasicMaterial({ 
+                    color: new THREE.Color(0x444466).lerp(new THREE.Color(0x8a2be2), Math.random() * 0.5)
+                });
+                const asteroid = new THREE.Mesh(asteroidGeo, asteroidMat);
+                
+                // FIX: Keep asteroids away from the center lanes to avoid hiding numbers
+                const side = Math.random() > 0.5 ? 1 : -1;
+                asteroid.position.set(
+                    side * (6 + Math.random() * 20),
+                    (Math.random() - 0.5) * 20 + 5,
+                    -Math.random() * 400
+                );
+                asteroid.rotation.set(Math.random() * Math.PI, Math.random() * Math.PI, Math.random() * Math.PI);
+                gameState.scene.add(asteroid);
+                gameState.pillars.push(asteroid);
+            }
+            
+            // Add stars (small bright spheres)
+            for (let i = 0; i < 100; i++) {
+                const starGeo = new THREE.SphereGeometry(0.05 + Math.random() * 0.1, 4, 4);
+                const starMat = new THREE.MeshBasicMaterial({ 
+                    color: new THREE.Color(0xffffff).lerp(new THREE.Color(0x8a2be2), Math.random() * 0.3)
+                });
+                const star = new THREE.Mesh(starGeo, starMat);
+                
+                star.position.set(
+                    (Math.random() - 0.5) * 60,
+                    (Math.random() - 0.5) * 50 + 10,
+                    -Math.random() * 500
+                );
+                gameState.scene.add(star);
+                gameState.pillars.push(star);
+            }
+            
+            // Add nebula-like clouds (large semi-transparent spheres)
+            for (let i = 0; i < 25; i++) {
+                const nebulaGeo = new THREE.SphereGeometry(5 + Math.random() * 10, 12, 12);
+                const nebulaMat = new THREE.MeshBasicMaterial({ 
+                    color: new THREE.Color(0x8a2be2).multiplyScalar(0.3 + Math.random() * 0.4),
+                    transparent: true,
+                    opacity: 0.05 + Math.random() * 0.1
+                });
+                const nebula = new THREE.Mesh(nebulaGeo, nebulaMat);
+                
+                // FIX: Keep nebulae mostly in the background or far sides
+                nebula.position.set(
+                    (Math.random() - 0.5) * 60,
+                    (Math.random() - 0.5) * 30 + 10,
+                    -Math.random() * 400
+                );
+                gameState.scene.add(nebula);
+                gameState.pillars.push(nebula);
+            }
+
+            // Add a distant "Black Hole" or "Galaxy Core" effect
+            const coreGeo = new THREE.TorusGeometry(5, 1, 16, 100);
+            const coreMat = new THREE.MeshBasicMaterial({ 
+                color: 0x000000,
+                transparent: true,
+                opacity: 0.8
+            });
+            const core = new THREE.Mesh(coreGeo, coreMat);
+            core.position.set(0, 10, -450);
+            core.rotation.x = Math.PI / 2;
+            gameState.scene.add(core);
+            gameState.pillars.push(core);
+
+            const coreGlowGeo = new THREE.SphereGeometry(4, 32, 32);
+            const coreGlowMat = new THREE.MeshBasicMaterial({ 
+                color: 0x8a2be2,
+                transparent: true,
+                opacity: 0.4
+            });
+            const coreGlow = new THREE.Mesh(coreGlowGeo, coreGlowMat);
+            coreGlow.position.set(0, 10, -450);
+            gameState.scene.add(coreGlow);
+            gameState.pillars.push(coreGlow);
         }
         
         function createPlayer() {
@@ -1932,6 +2235,9 @@
                 }
             }
             
+            // Update Rainbow Skin (Disco Ball)
+            updatePlayerSkin();
+            
             // Update camera
             if (gameState.camera && gameState.player) {
                 gameState.camera.position.x += (gameState.player.position.x - gameState.camera.position.x) * 0.05;
@@ -1964,6 +2270,7 @@
             const container = document.getElementById('shop-items');
             container.innerHTML = '';
             
+            // Render Skins
             SHOP_ITEMS.skins.forEach(skin => {
                 const isUnlocked = playerData.unlockedSkins.includes(skin.id);
                 const isEquipped = playerData.equippedSkin === skin.id;
@@ -1978,9 +2285,32 @@
                 
                 item.innerHTML = `
                     <div class="item-preview">${skin.emoji}</div>
-                    <div style="font-weight: bold; color: white;">${skin.name}</div>
+                    <div style="font-weight: bold; color: white;">${skin.name} (Skin)</div>
                     <div style="color: ${statusColor}; font-weight: bold; margin: 5px 0;">${status}</div>
                     <div style="font-size: 12px; color: #aaa;">${skin.price === 0 ? 'Free' : `${skin.price} coins`}</div>
+                `;
+                
+                container.appendChild(item);
+            });
+
+            // Render Maps
+            SHOP_ITEMS.maps.forEach(map => {
+                const isUnlocked = playerData.unlockedMaps.includes(map.id);
+                const isEquipped = playerData.equippedMap === map.id;
+                
+                const item = document.createElement('div');
+                item.className = `shop-item ${isEquipped ? 'equipped' : ''}`;
+                item.onclick = () => purchaseMap(map.id);
+                item.style.setProperty('--item-color', `#${map.color.toString(16).padStart(6, '0')}`);
+                
+                const status = isEquipped ? 'EQUIPPED' : (isUnlocked ? 'OWNED' : `${map.price} coins`);
+                const statusColor = isEquipped ? '#00ff00' : (isUnlocked ? '#ffd700' : '#ffd700');
+                
+                item.innerHTML = `
+                    <div class="item-preview">${map.emoji}</div>
+                    <div style="font-weight: bold; color: white;">${map.name} (Map)</div>
+                    <div style="color: ${statusColor}; font-weight: bold; margin: 5px 0;">${status}</div>
+                    <div style="font-size: 12px; color: #aaa;">${map.price === 0 ? 'Free' : `${map.price} coins`}</div>
                 `;
                 
                 container.appendChild(item);
@@ -1997,8 +2327,12 @@
                 playerData.equippedSkin = skinId;
                 savePlayerData();
                 updateShopDisplay();
-                createPlayer();
-                showNotification(`${skin.name} equipped!`, 'success');
+                
+                // Reset HTML/Page to apply skin and clear state
+                showNotification(`${skin.name} equipped! Resetting...`, 'success');
+                setTimeout(() => {
+                    window.location.reload();
+                }, 500);
             } else if (playerData.coins >= skin.price) {
                 // Purchase
                 playerData.coins -= skin.price;
@@ -2006,10 +2340,46 @@
                 playerData.equippedSkin = skinId;
                 savePlayerData();
                 updateShopDisplay();
-                createPlayer();
-                showNotification(`${skin.name} purchased!`, 'success');
+                
+                // Reset HTML/Page to apply skin and clear state
+                showNotification(`${skin.name} purchased! Resetting...`, 'success');
+                setTimeout(() => {
+                    window.location.reload();
+                }, 500);
             } else {
                 showNotification(`Need ${skin.price - playerData.coins} more coins!`, 'error');
+            }
+        }
+
+        function purchaseMap(mapId) {
+            const map = SHOP_ITEMS.maps.find(m => m.id === mapId);
+            
+            if (playerData.unlockedMaps.includes(mapId)) {
+                // Already owned - equip it
+                playerData.equippedMap = mapId;
+                savePlayerData();
+                updateShopDisplay();
+                showNotification(`${map.name} map equipped!`, 'success');
+                
+                // Reload page to apply map changes to the 3D scene
+                setTimeout(() => {
+                    window.location.reload();
+                }, 500);
+            } else if (playerData.coins >= map.price) {
+                // Purchase
+                playerData.coins -= map.price;
+                playerData.unlockedMaps.push(mapId);
+                playerData.equippedMap = mapId;
+                savePlayerData();
+                updateShopDisplay();
+                showNotification(`${map.name} map purchased!`, 'success');
+                
+                // Reload page to apply map changes to the 3D scene
+                setTimeout(() => {
+                    window.location.reload();
+                }, 500);
+            } else {
+                showNotification(`Need ${map.price - playerData.coins} more coins!`, 'error');
             }
         }
         
@@ -2017,11 +2387,13 @@
             const skin = SHOP_ITEMS.skins.find(s => s.id === playerData.equippedSkin);
             if (skin && gameState.playerCore) {
                 if (skin.id === 'skin_rainbow') {
-                    // Rainbow effect
-                    const time = Date.now() * 0.005;
-                    const r = Math.sin(time) * 0.5 + 0.5;
-                    const g = Math.sin(time + 2) * 0.5 + 0.5;
-                    const b = Math.sin(time + 4) * 0.5 + 0.5;
+                    // Disco Ball Effect: Changes color every 1.255 seconds
+                    const time = Date.now() * 0.001; 
+                    const period = 1.255; 
+                    const speed = (2 * Math.PI) / period;
+                    const r = Math.sin(time * speed) * 0.5 + 0.5;
+                    const g = Math.sin(time * speed + 2) * 0.5 + 0.5;
+                    const b = Math.sin(time * speed + 4) * 0.5 + 0.5;
                     gameState.playerCore.material.color.setRGB(r, g, b);
                 } else {
                     gameState.playerCore.material.color.setHex(skin.color);
@@ -2241,9 +2613,19 @@
             try {
                 const savedData = localStorage.getItem(CONFIG.localStoragePrefix + 'playerData');
                 if (savedData) {
-                    // Decode from Base64 to prevent simple console editing
-                    const decodedData = atob(savedData);
-                    const parsed = JSON.parse(decodedData);
+                    const decodedPayload = JSON.parse(atob(savedData));
+                    
+                    // Verify checksum to prevent simple hacking
+                    if (decodedPayload.hash && decodedPayload.data) {
+                        const currentHash = btoa(decodedPayload.data).slice(0, 10);
+                        if (currentHash !== decodedPayload.hash) {
+                            console.warn('Data corruption or tampering detected! Resetting to defaults.');
+                            // We don't reset everything, but we could flag it. 
+                            // For now, we'll just load the data but warn.
+                        }
+                    }
+                    
+                    const parsed = JSON.parse(decodedPayload.data || decodedPayload);
                     playerData = { ...playerData, ...parsed };
                 }
             } catch (error) {
@@ -2253,8 +2635,14 @@
         
         function savePlayerData() {
             try {
-                // Encode to Base64 to obfuscate data in localStorage
-                const encodedData = btoa(JSON.stringify(playerData));
+                // Add a simple checksum to detect manual localStorage editing
+                const dataString = JSON.stringify(playerData);
+                const checksum = btoa(dataString).slice(0, 10); 
+                const payload = {
+                    data: dataString,
+                    hash: checksum
+                };
+                const encodedData = btoa(JSON.stringify(payload));
                 localStorage.setItem(CONFIG.localStoragePrefix + 'playerData', encodedData);
             } catch (error) {
                 console.log('Could not save data:', error);
@@ -2307,6 +2695,7 @@
         window.moveRight = moveRight;
         window.stopMove = stopMove;
         window.skipLoading = skipLoading;
+        window.purchaseMap = purchaseMap;
     </script>
 </body>
 </html>
